@@ -22,3 +22,6 @@ Exactly eight instructions doing two well-defined syscalls. This container is as
 fast and as safe as it can possibly get.
 
 In the future, I would like to implement a static web server along the same principles.
+
+
+https://filippo.io/linux-syscall-table/
