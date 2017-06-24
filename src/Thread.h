@@ -3,6 +3,6 @@
 
 class Thread {
 public:
-  static void clone(int (*func)(void *), void* arg);
+  static int64_t clone(int (*func)(void *), void* arg);
   static uint64_t num_cores();
 };

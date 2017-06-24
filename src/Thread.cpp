@@ -5,11 +5,8 @@
 #include <sched.h> // For CLONE_*
 #include <sys/mman.h> // For PROT_*
 
-void Thread::clone(int (*func)(void *), void* arg)
+int64_t Thread::clone(int (*func)(void *), void* arg)
 {
-  // sysconf(_SC_PAGE_SIZE)
-  const uint64_t page_size = 4096;
-
   // Allocate stack
   const uint64_t stack_size = 1048576;
   const int prot = PROT_READ | PROT_WRITE;
@@ -21,26 +18,29 @@ void Thread::clone(int (*func)(void *), void* arg)
   const uint64_t stack_top = static_cast<uint64_t>(result_mmap);
   const uint64_t stack_base = stack_top + stack_size;
 
-  // Protect the topmost page of the stack
-  const int result_protect = syscall(SYS_mprotect, stack_top, page_size, PROT_NONE);
-  if(result_protect < 0) {
-    fail(-result_protect, "Could not guard top of stack");
-  }
+  // Store argument in register
+  register void* arg_reg = arg;
 
   // Clone the thread
   const uint64_t flags = CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_PARENT_SETTID | CLONE_SIGHAND | CLONE_SYSVSEM | CLONE_THREAD | CLONE_VM;
   int parent_tid;
   int child_tid;
   const uint64_t tld = 0;
-  const int clone_result = syscall(SYS_clone, flags, stack_base, &parent_tid, &child_tid, tld);
+  const int64_t clone_result = syscall(SYS_clone, flags, stack_base, &parent_tid, &child_tid, tld);
   if(clone_result < 0) {
     fail(-clone_result, "Could not clone thread");
   }
+  // NOTE: ESP, the stackpointer, has been maninpulated and the compiler does
+  //       not know about it. Expect dragons.
   if(clone_result == 0) {
-    const int exit_code = func(arg);
+    // TODO: This only works if arg is passed as a register (can't trust the stack)
+    const int exit_code = func(arg_reg);
     syscall(SYS_exit, exit_code);
     // TODO Have parent unmap stack.
   }
+  // NOTE: At this point, we know we have our original stack. It is safe
+  //       to return.
+  return clone_result;
 }
 
 uint64_t Thread::num_cores()

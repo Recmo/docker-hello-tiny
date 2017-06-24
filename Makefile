@@ -6,10 +6,10 @@ run: all container
 container: serve
 	docker build . -t minimal-docker
 
-serve: serve.o EventLoop.o EventHandler.o Signals.o Timer.o fail.o Listener.o Thread.o
+serve: serve.o EventLoop.o EventHandler.o Signals.o Timer.o fail.o Listener.o Socket.o Thread.o HttpRequestParser.o Response.o
 
 %.o: src/%.cpp
-	clang++ -std=c++14 -Os -fno-exceptions -fno-asynchronous-unwind-tables -fno-rtti -c $< -o $@
+	clang++ -std=c++14 -march=native -Os -fno-exceptions -fno-asynchronous-unwind-tables -fno-rtti -c $< -o $@
 
 %: %.o
 	ld.gold --plugin /usr/lib/LLVMgold.so -s $^ -o $@

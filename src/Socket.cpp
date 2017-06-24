@@ -1,31 +1,24 @@
 #include "Socket.h"
 #include "EventLoop.h"
 #include "HttpRequestParser.h"
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/epoll.h>
-#include <sys/syscall.h>
-#include <system_error>
-#include <cerrno>
-#include <sys/sendfile.h>
-#include <unistd.h>
-#include <iostream>
+#include "syscall.h"
+#include "fail.h"
+#include <sys/epoll.h> // EPOLLIN, EPOLLONESHOT, ...
+#include <sys/errno.h> // EAGAIN, EWOULDBLOCK, ..
+#include <linux/in.h> // sockaddr_in, IPPROTO_TCP, ..
+#include <sys/stat.h> // stat
+#include <fcntl.h> // O_CLOEXEC
 
-// Own implementation of read that foregoes pthread_cancel handling
-inline long read_nocancel(int fd, void *buf, size_t count)
-{
-  return syscall(SYS_read, fd, buf, count);
-}
-
-inline long close_nocancel(int fd)
-{
-  return syscall(SYS_close, fd);
-}
-
-Socket::Socket(int descriptor)
+Socket::Socket(EventLoop& el, int descriptor)
 : EventHandler{descriptor}
+, state{0}
 {
+  // TODO: We are not interested in the EPOLLOUT before we read the header.
+  event_mask = EPOLLIN | EPOLLHUP | EPOLLRDHUP;
+
+  // Try handling immediately!
+  handle(el, EPOLLIN | EPOLLOUT);
+  added = true;
 }
 
 Socket::~Socket()
@@ -37,26 +30,24 @@ void Socket::handle(EventLoop& el, uint32_t events)
   // Was the connection closed?
   if(events & EPOLLHUP || events & EPOLLRDHUP) {
     // Close already deregisters us, like el.remove_handler(this);
-    const int result = close_nocancel(descriptor);
+    const int result = syscall(SYS_close, descriptor);
     if(result < 0) {
-      throw std::system_error{
-        std::error_code{errno, std::system_category()},
-        "Error closing socket"
-      };
+      fail(-result, "Error closing socket");
     }
-    delete this;
+    // TODO delete this;
+    closed = true;
     return;
   }
 
   // Read some
   if(state == 0 && events & EPOLLIN) {
     char buffer[10240];
-    const int result = read_nocancel(descriptor, buffer, sizeof(buffer) - 16);
+    const int result = syscall(SYS_read, descriptor, buffer, sizeof(buffer) - 16);
+    if(result == -EAGAIN) {
+      return;
+    }
     if(result < 0) {
-      throw std::system_error{
-        std::error_code{errno, std::system_category()},
-        "Error reading socket"
-      };
+      fail(-result, "Error reading socket");
     }
     const uint size = result;
     HttpRequestParser parser;
@@ -64,26 +55,37 @@ void Socket::handle(EventLoop& el, uint32_t events)
     offset = response.offset;
     length = response.length;
     state = 1;
+
+    // Start listening for EPOLLOUT
+    event_mask = EPOLLOUT | EPOLLHUP | EPOLLRDHUP;
+    if(added) {
+      el.update_handler(this);
+    }
   }
 
   // Write some
   if(state == 1 && events & EPOLLOUT) {
-    const ssize_t result = sendfile64(
-      descriptor, Response::descriptor, &offset, length);
+    const ssize_t result = syscall(SYS_sendfile, descriptor, Response::descriptor, &offset, length);
     if(result < 0) {
-      throw std::system_error{
-        std::error_code{errno, std::system_category()},
-        "Error sending file"
-      };
+      fail(-result, "Error sending file");
     }
     length -= result;
     if(length == 0) {
       reqs++;
-      state = 0;
+      state = 2;
     }
+  }
+
+  // Close when done
+  // TODO HTTP keep-alive
+  if(state == 2) {
+    const int result = syscall(SYS_close, descriptor);
+    if(result < 0) {
+      fail(-result, "Error closing socket");
+    }
+    closed = true;
   }
 
   // TODO: Timeouts
   // TODO: Max header sizes
-  // TODO: Close
 }

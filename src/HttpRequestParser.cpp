@@ -1,17 +1,5 @@
 #include "HttpRequestParser.h"
-#include <stdexcept>
-#include <cstring>
-#include <iostream>
-
-uint64_t HttpRequestParser::hash(const std::string& path)
-{
-  const std::string fake_req{
-    std::string{"GET "} + path + std::string{" HTTP/1.1\r\n\r\n"}
-  };
-  HttpRequestParser parser;
-  parser.read(fake_req.data(), fake_req.size());
-  return parser.hashv();
-}
+#include "fail.h"
 
 HttpRequestParser::HttpRequestParser()
 : state{0}
@@ -187,7 +175,5 @@ inline uint HttpRequestParser::hash_till_space(const char *buffer, uint size)
     h = update(h, block);
   }
   // TODO: return some error
-  throw std::runtime_error{
-    "Invalid request"
-  };
+  fail(0, "Invalid request");
 }

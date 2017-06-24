@@ -8,6 +8,7 @@
 #include "Timer.h"
 #include "Signals.h"
 #include "Thread.h"
+#include "Response.h"
 
 const uint16_t port = 8080;
 
@@ -24,26 +25,16 @@ int thread(void* arg)
 
 extern "C" void _start ()
 {
+  Response::initialize();
+
   // Fetch number of cores
   const uint cores = Thread::num_cores();
 
-  Thread::clone(thread, (void*)"Hello from thread 1\n");
-  Thread::clone(thread, (void*)"Hello from thread 2\n");
-  Thread::clone(thread, (void*)"Hello from thread 3\n");
-  Thread::clone(thread, (void*)"Hello from thread 4\n");
-
-  syscall(SYS_write, 2, "Hello from parent!\n", 19);
-  syscall(SYS_exit, 0);
-
-
-  // Allocate memory
+  // Allocate memory (todo: mmap?)
   uint64_t brk = syscall(SYS_brk, 0);
   brk = syscall(SYS_brk, brk + cores * 1024);
   // TODO allocate pools using SYS_brk
   Pool<EventLoop, 100> loops;
-
-
-
 
   // TODO: seccomp-bpf
 
@@ -57,9 +48,9 @@ extern "C" void _start ()
   loop.add_handler(&signals);
   loop.add_handler(&timer);
   loop.add_handler(&server);
-  timer.start(2500000000ULL);
+  timer.start(25000000000ULL);
   loop.run();
 
-  syscall<uint64_t>(SYS_write, 1, str, sizeof(str) - 1);
-  syscall<uint64_t>(SYS_exit, 0);
+  syscall(SYS_write, 1, str, sizeof(str) - 1);
+  syscall(SYS_exit, 0);
 }

@@ -4,10 +4,13 @@
 
 class Socket: public EventHandler {
 public:
-  Socket(int descriptor);
-  virtual ~Socket();
+  Socket(EventLoop& el, int descriptor);
+  ~Socket();
 
   virtual void handle(EventLoop& el, uint32_t events) final;
+
+  bool added = false;
+  bool closed = false;
 
 private:
   uint8_t state;

@@ -42,11 +42,16 @@ void Listener::handle(EventLoop& el, uint32_t events)
   }
   const int socket_descriptor = result;
 
-  // TODO interact with socket.
-  syscall(SYS_write, socket_descriptor, "Hello!\n", 7);
-  syscall(SYS_close, socket_descriptor);
+  // TODO What if pool is full
+  Socket* socket = socket_pool.alloc();
+  new(socket) Socket(el, socket_descriptor);
 
-  // syscall(SYS_sendfile, socket_descriptor);
+  // Add the socket if necessary
+  if(!socket->closed) {
+    el.add_handler(socket);
+  } else {
+    socket_pool.free(socket);
+  }
 
   // Re-arm the accept
   // TODO: EPOLLEXCLUSIVE in Linux 4.5.0
@@ -80,6 +85,14 @@ int Listener::create(uint16_t port)
     &optval, sizeof(optval));
   if(opt_result < 0) {
     fail(-opt_result, "Error setting socket options");
+  }
+
+  // Make sure lingering is disabled, this will make SYS_close non-blocking
+  const linger optval2{0, 0};
+  const int opt_result2 = syscall(SYS_setsockopt, socket_fd, SOL_SOCKET, SO_LINGER,
+    &optval2, sizeof(linger));
+  if(opt_result2 < 0) {
+    fail(-opt_result2, "Error setting socket options");
   }
 
   // Bind to address
