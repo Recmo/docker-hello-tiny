@@ -6,7 +6,7 @@ run: all container
 container: serve
 	docker build . -t minimal-docker
 
-serve: serve.o EventLoop.o EventHandler.o Signals.o Timer.o fail.o Listener.o
+serve: serve.o EventLoop.o EventHandler.o Signals.o Timer.o fail.o Listener.o Thread.o
 
 %.o: src/%.cpp
 	clang++ -std=c++14 -Os -fno-exceptions -fno-asynchronous-unwind-tables -fno-rtti -c $< -o $@

@@ -7,6 +7,7 @@
 #include "Pool.h"
 #include "Timer.h"
 #include "Signals.h"
+#include "Thread.h"
 
 const uint16_t port = 8080;
 
@@ -15,57 +16,33 @@ const char str[] = "Hello, World!\n";
 char buffer[1000000];
 
 
-uint num_cores()
+int thread(void* arg)
 {
-  const char* path = "/sys/devices/system/cpu/online";
-  const int result_open = syscall(SYS_open, path, O_RDONLY|O_CLOEXEC);
-  if(result_open < 0) {
-    fail(-result_open, "Could not open file");
-  }
-  const int file = result_open;
-
-  char buffer[512];
-  const int result_read = syscall(SYS_read, file, buffer, sizeof(buffer));
-  if(result_read < 0 || result_read >= sizeof(buffer)) {
-    fail(-result_read, "Could not read file");
-  }
-
-  const int result_close = syscall(SYS_close, file);
-  if(result_close < 0) {
-    fail(-result_close, "Could not close file");
-  }
-
-  // Parse format [0-9]+ '-' [0-9]+
-  uint start = -1;
-  uint end = 0;
-  for(uint i = 0; i < result_read; ++i) {
-    const char c = buffer[i];
-    if(c >= '0' && c <= '9') {
-      end *= 10;
-      end += c - '0';
-    } else if (c == '-' && start == -1) {
-      start = end;
-      end = 0;
-    } else if (c == '\n' && start != -1 && i == result_read - 1) {
-      break;
-    } else {
-      fail(0, "Unexpected character");
-    }
-  }
-
-  return end - start + 1;
+  syscall(SYS_write, 2, arg, 20);
+  return 1337;
 }
 
 extern "C" void _start ()
 {
   // Fetch number of cores
-  const uint cores = num_cores();
+  const uint cores = Thread::num_cores();
+
+  Thread::clone(thread, (void*)"Hello from thread 1\n");
+  Thread::clone(thread, (void*)"Hello from thread 2\n");
+  Thread::clone(thread, (void*)"Hello from thread 3\n");
+  Thread::clone(thread, (void*)"Hello from thread 4\n");
+
+  syscall(SYS_write, 2, "Hello from parent!\n", 19);
+  syscall(SYS_exit, 0);
+
 
   // Allocate memory
   uint64_t brk = syscall(SYS_brk, 0);
   brk = syscall(SYS_brk, brk + cores * 1024);
   // TODO allocate pools using SYS_brk
   Pool<EventLoop, 100> loops;
+
+
 
 
   // TODO: seccomp-bpf
