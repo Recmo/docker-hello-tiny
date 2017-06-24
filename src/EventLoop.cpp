@@ -9,11 +9,7 @@
 
 EventLoop::EventLoop()
 : epoll_fd(epoll_create())
-, timer{}
-, signals{}
 {
-  add_handler(&timer);
-  add_handler(&signals);
 }
 
 EventLoop::~EventLoop()
@@ -43,7 +39,6 @@ void EventLoop::stop()
 
 void EventLoop::run()
 {
-
   // Stack allocate epoll event buffer
   constexpr std::size_t epoll_buffer_size = 10; // TODO Tune epoll buffer size
   epoll_event events[epoll_buffer_size];
@@ -54,7 +49,6 @@ void EventLoop::run()
 
     // Wait for event
     constexpr int timeout_ms = -1; // No timeout
-
     const int result = syscall(SYS_epoll_wait, epoll_fd, events, sizeof(events), timeout_ms);
     if(result <= 0) {
       fail(-result, "epoll_wait");
@@ -66,7 +60,7 @@ void EventLoop::run()
       const epoll_event& event = events[i];
       EventHandler* handler = static_cast<EventHandler*>(event.data.ptr);
       if(handler == nullptr) {
-        fail(0, "No handler");
+        fail(0, "No handler on event");
       }
       handler->handle(*this, event.events);
     }
@@ -91,7 +85,7 @@ void EventLoop::epoll_ctl(EventHandler *handler, int op)
   const int fd = handler->descriptor;
 
   // Add to epoll
-  const int result = syscall<uint64_t>(SYS_epoll_ctl, epoll_fd, op, fd, &event);
+  const int result = syscall(SYS_epoll_ctl, epoll_fd, op, fd, &event);
   if(result < 0) {
     fail(result, "epoll_ctl");
   }
